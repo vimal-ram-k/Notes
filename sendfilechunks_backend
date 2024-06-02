@@ -1,0 +1,174 @@
+import express, { Router, Request, Response } from "express";
+import multer from "multer";
+import trie from "../../ds/trie";
+import dbconnection from "../../config/usertable";
+import fs from "fs";
+import ffmeg from "fluent-ffmpeg";
+import path from "path";
+
+const route: Router = express.Router();
+const upload = multer({ dest: "uploads/" });
+
+interface ChunkUploadRequest extends Request {
+  file?: Express.Multer.File;
+  body: {
+    index: string;
+    totalchunks: string;
+    filename: string;
+  };
+}
+
+route.post(
+  "/chunk",
+  upload.single("chunk"),
+  (req: ChunkUploadRequest, res: Response) => {
+    const { index, totalchunks, filename } = req.body;
+
+    if (!req.file) {
+      return res.status(400).send("No file uploaded");
+    }
+
+    // Strip the extension from the filename to use as a directory name
+    const fileBaseName = path.basename(filename, path.extname(filename));
+
+    // Directory to store chunks
+    const chunkDir = path.join("uploads", `${fileBaseName}_chunks`);
+    if (!fs.existsSync(chunkDir)) {
+      fs.mkdirSync(chunkDir);
+    }
+
+    // Path to store the current chunk
+    const chunkPath = path.join(chunkDir, `chunk_${index}`);
+
+    // Move the chunk to the designated chunk directory
+    if (req.file) {
+      fs.renameSync(req.file.path, chunkPath);
+    }
+
+    // Save metadata for the upload
+    const metadataPath = path.join(chunkDir, "metadata.json");
+    let metadata = {
+      filename,
+      totalchunks: Number(totalchunks),
+      receivedChunks: [] as number[],
+    };
+
+    if (fs.existsSync(metadataPath)) {
+      metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
+    }
+
+    metadata.receivedChunks.push(Number(index));
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata));
+
+    // Check if all chunks are uploaded
+    if (metadata.receivedChunks.length === metadata.totalchunks) {
+      // Path for the final file
+      const finalPath = path.join("uploads", filename);
+      const writeStream = fs.createWriteStream(finalPath);
+
+      for (let i = 0; i < metadata.totalchunks; i++) {
+        const chunkFilePath = path.join(chunkDir, `chunk_${i}`);
+        const data = fs.readFileSync(chunkFilePath);
+        writeStream.write(data);
+        fs.unlinkSync(chunkFilePath); // Delete chunk file after merging
+      }
+
+      writeStream.end(() => {
+        fs.unlinkSync(metadataPath); // Remove the metadata file
+        fs.rmdirSync(chunkDir); // Remove the chunks directory
+        res.send("File uploaded and combined successfully");
+      });
+    } else {
+      res.json({ message: `Chunk ${index} uploaded successfully` });
+    }
+  }
+);
+
+route.post(
+  "/upload",
+  upload.single("file"),
+  async (req: Request, res: Response) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "Please upload a file..." });
+    }
+
+    const filepath = req.file.path;
+    console.log(`Uploaded file path: ${filepath}`);
+
+    if (!filepath) {
+      return res.status(500).json({ message: "File path is not defined" });
+    }
+
+    const outputDir = "processed_videos";
+
+    const resolutions = [
+      { name: "360p", size: "640x360" },
+      { name: "480p", size: "854x480" },
+      { name: "720p", size: "1280x720" },
+    ];
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir);
+    }
+
+    interface Resolution {
+      name: string;
+      path: string;
+    }
+
+    const videoData: {
+      originalname: string;
+      resolutions: Resolution[];
+    } = {
+      originalname: req.file.originalname,
+      resolutions: [],
+    };
+
+    try {
+      await Promise.all(
+        resolutions.map(
+          ({ name, size }) =>
+            new Promise<void>((resolve, reject) => {
+              const outputpath = path.join(
+                outputDir,
+                `${path.parse(filepath).name}_${name}.mp4`
+              );
+
+              ffmeg(filepath)
+                .size(size)
+                .output(outputpath)
+                .on("end", () => {
+                  videoData.resolutions.push({ name, path: outputpath });
+                  console.log(`${name} conversion finished`);
+                  resolve();
+                })
+                .on("error", (err) => {
+                  console.error(`Error processing ${name}`, err);
+                  reject(err);
+                })
+                .run();
+            })
+        )
+      );
+
+      res.json({ message: "Video upload and processing completed", videoData });
+    } catch (error) {
+      console.error("Error processing video:", error);
+      res.status(500).send("Error processing video");
+    }
+  }
+);
+route.post(
+  "/seach/v1/username",
+  multer().none(),
+  (req: Request, res: Response) => {
+    let data: string = req.body.data;
+    console.log(req.body.data);
+    data = data[0].toUpperCase();
+    const list = trie.search(data);
+    console.log(list);
+    res.json(list);
+  }
+);
+
+export default route;
