@@ -1,0 +1,68 @@
+import axios from "axios";
+import React, { ChangeEvent, useRef, useState } from "react";
+
+const MoviesTab = () => {
+  const [file, setFile] = useState<File | null>(null);
+
+  const HandleUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const file = e.target.files[0];
+      console.log(file);
+      setFile(file);
+    }
+  };
+
+  const Upload = async (chunk: Blob, index: number, totalchunk: number) => {
+    if (!file) return;
+    const formdata = new FormData();
+    formdata.append("chunk", chunk);
+    formdata.append("index", index.toString());
+    formdata.append("totalchunks", totalchunk.toString());
+    formdata.append("filename", file.name);
+
+    const responce = await axios
+      .post("http://localhost:3000/chunk", formdata, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      .then((res) => {
+        console.log(res.data.message);
+      });
+  };
+
+  const Handledatasend = async () => {
+    const chunksize = 5 * 1024 * 1024;
+    if (file) {
+      const totalchunk = Math.ceil(file.size / chunksize);
+
+      for (let i = 0; i < totalchunk; i++) {
+        const start = i * chunksize;
+        const end = Math.min(start + chunksize, file.size);
+        const chunk = file.slice(start, end);
+
+        await Upload(chunk, i, totalchunk);
+      }
+
+      console.log("Uploaded file");
+    }
+  };
+  return (
+    <>
+      <label htmlFor="" role="upload-file">
+        Upload File
+      </label>
+      <br />
+      <input
+        className=" mt-5"
+        type="file"
+        name=""
+        id="file"
+        onChange={HandleUpload}
+      />
+      <button onClick={Handledatasend}>Upload</button>
+    </>
+  );
+};
+
+export default MoviesTab;
