@@ -1,0 +1,60 @@
+import express, { Router, Request, Response } from "express";
+import multer from "multer";
+import trie from "../../ds/trie";
+import fs from "fs";
+import ffmeg from "fluent-ffmpeg";
+import path from "path";
+import e from "express";
+
+const route: Router = express.Router();
+const upload = multer({ dest: "uploads/" });
+
+interface ChunkUploadRequest extends Request {
+  file?: Express.Multer.File;
+
+  body: {
+    index: string;
+    totalchunks: string;
+    filename: string;
+  };
+}
+
+route.get("/video/:filename", (req: Request, res: Response) => {
+  const videopath = path.join(__dirname, "uploads", req.params.filename);
+  const stat = fs.statSync(videopath);
+  const filesize = stat.size;
+  const range = req.headers.range;
+
+  if (range) {
+    console.log(req.headers.range);
+
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end =
+      parseInt(parts[0] + parts[0]) < filesize - 1
+        ? parseInt(parts[0] + parts[0], 10)
+        : filesize - 1;
+    console.log(parseInt(parts[0]) + 20000);
+    const chunkSize = end - start + 1;
+    const file = fs.createReadStream(videopath, { start, end });
+
+    const head = {
+      "Content-Range": `bytes ${start}-${end}/${filesize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkSize,
+      "Content-Type": "video/mp4",
+    };
+
+    res.writeHead(206, head);
+    file.pipe(res);
+  } else {
+    const head = {
+      "Content-Length": filesize,
+      "Content-Type": "video/mp4",
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(videopath).pipe(res);
+  }
+});
+
+export default route;
