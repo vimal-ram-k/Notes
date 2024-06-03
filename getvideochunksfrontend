@@ -1,0 +1,56 @@
+import axios from "axios";
+import { useEffect, useRef, useState } from "react";
+
+const VideoPlayer = () => {
+  const videoRef = useRef(null);
+  const [videoURL, setVideoURL] = useState("");
+
+    useEffect(() => {
+      const fetchVideo = async (start = 0, end = null) => {
+        const response = await axios.get(
+          "http://localhost:3000/video/3209828-uhd_3840_2160_25fps.mp4",
+          {
+            headers: {
+              Range: `bytes=${start}-${end ? end : ""}`,
+            },
+          }
+        );
+
+        if (response.status === 206) {
+          const blob = new Blob([response.data], { type: "video/mp4" });
+          const url = URL.createObjectURL(blob);
+          console.log("URL", url);
+          setVideoURL(url);
+        } else {
+          console.error("Failed to fetch video", response.statusText);
+        }
+      };
+
+      fetchVideo();
+
+      return () => {
+        if (videoURL) {
+          URL.revokeObjectURL(videoURL);
+        }
+      };
+    }, [videoURL]);
+
+  return (
+    <>
+      <h1>Hi</h1>
+      <video
+        ref={videoRef}
+        style={{ width: "100dvw", height: "50dvh" }}
+        autoPlay
+        controls
+      >
+        <source
+          src={"http://localhost:3000/video/3209828-uhd_3840_2160_25fps.mp4"}
+          type="video/mp4"
+        />
+      </video>
+    </>
+  );
+};
+
+export default VideoPlayer;
